@@ -10,7 +10,7 @@ int main() {
     GPUMetrics gpuMetrics;
     
     // Initialize DatabaseManager with batch size of 10
-    DatabaseManager dbManager("metrics.db", 10);
+    DatabaseManager dbManager("data/metrics.db", 10);
     if (!dbManager.initialize()) {
         std::cerr << "Failed to initialize database. Exiting." << std::endl;
         return 1;
