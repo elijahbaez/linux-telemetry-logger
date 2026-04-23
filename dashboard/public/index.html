@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GPU Telemetry Dashboard</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <style>
+        body { background-color: #121212; color: #00FF00; font-family: monospace; padding: 40px; }
+        .card { background: #1e1e1e; padding: 20px; border-radius: 8px; border: 1px solid #333; max-width: 400px;}
+        h1 { color: #76b900; } /* NVIDIA Green */
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function App() {
+            const [metrics, setMetrics] = useState([]);
+
+            useEffect(() => {
+                const fetchData = async () => {
+                    try {
+                        const res = await fetch('/api/metrics');
+                        const data = await res.json();
+                        if(Array.isArray(data)) setMetrics(data);
+                    } catch (e) { console.error("Waiting for DB..."); }
+                };
+                fetchData();
+                const interval = setInterval(fetchData, 2000);
+                return () => clearInterval(interval);
+            }, []);
+
+            return (
+                <div>
+                    <h1>NVIDIA Telemetry Dashboard</h1>
+                    {metrics.length === 0 ? <p>Waiting for C++ Logger batch flush...</p> : (
+                        <div className="card">
+                            <h3>Live Hardware Metrics</h3>
+                            <p><strong>GPU Temp:</strong> {metrics[metrics.length-1].gpu_temp} °C</p>
+                            <p><strong>GPU Util:</strong> {metrics[metrics.length-1].gpu_util} %</p>
+                            <p><strong>CPU Util:</strong> {metrics[metrics.length-1].cpu.toFixed(2)} %</p>
+                            <p><strong>RAM Util:</strong> {metrics[metrics.length-1].ram.toFixed(2)} %</p>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
