@@ -1,54 +1,116 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>GPU Telemetry Dashboard</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NVIDIA Terminal</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        body { background-color: #121212; color: #00FF00; font-family: monospace; padding: 40px; }
-        .card { background: #1e1e1e; padding: 20px; border-radius: 8px; border: 1px solid #333; max-width: 400px;}
-        h1 { color: #76b900; } /* NVIDIA Green */
+        body { background-color: #0d0d0d; color: #00FF41; font-family: 'Courier New', Courier, monospace; margin: 0; padding: 20px; overflow: hidden; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+        body::after { content: " "; display: block; position: absolute; top: 0; left: 0; bottom: 0; right: 0; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06)); z-index: 2; background-size: 100% 2px, 3px 100%; pointer-events: none; }
+        #root { z-index: 1; display: flex; flex-direction: column; height: 100%; }
+        #terminal-content { flex: 1; overflow-y: auto; padding-bottom: 10px; }
+        #status-bar { border-top: 1px dashed #00FF41; padding-top: 15px; margin-bottom: 20px; flex-shrink: 0; }
+        .ascii-art { font-size: 14px; font-weight: bold; color: #76b900; margin-bottom: 10px; line-height: 1.2; }
+        .sys-info { margin-bottom: 20px; font-size: 14px; color: #5bc236; }
+        .log-entry { margin: 4px 0; font-size: 15px; white-space: pre-wrap; }
+        .timestamp { color: #888; }
+        .metric-label { color: #008F11; }
+        .blink { animation: blinker 1s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0; } }
+        ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #00FF41; }
     </style>
 </head>
 <body>
     <div id="root"></div>
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
+        const asciiLogo = String.raw`  _   _ __     __ ___  ____   ___    _    
+ | \ | |\ \   / /|_ _||  _ \ |_ _|  / \   
+ |  \| | \ \ / /  | | | | | | | |  / _ \  
+ | |\  |  \ V /   | | | |_| | | | / ___ \ 
+ |_| \_|   \_/   |___||____/ |___/_/   \_\
+ Telemetry Systems Daemon v1.4.0 (WAL Enabled)`;
 
         function App() {
-            const [metrics, setMetrics] = useState([]);
+            const [logs, setLogs] = useState([]);
+            const [sys, setSys] = useState(null);
+            const [stats, setStats] = useState({});
+            const endRef = useRef(null);
 
             useEffect(() => {
-                const fetchData = async () => {
-                    try {
-                        const res = await fetch('/api/metrics');
-                        const data = await res.json();
-                        if(Array.isArray(data)) setMetrics(data);
-                    } catch (e) { console.error("Waiting for DB..."); }
+                fetch('/api/sysinfo').then(res => res.json()).then(data => setSys(data)).catch(e => {});
+                const fetchData = () => {
+                    fetch('/api/metrics').then(res => res.json()).then(data => {
+                        if (Array.isArray(data) && data.length > 0) setLogs(data);
+                    }).catch(e => {});
+                    
+                    fetch('/api/stats').then(res => res.json()).then(data => {
+                        setStats(data);
+                    }).catch(e => {});
                 };
                 fetchData();
-                const interval = setInterval(fetchData, 2000);
+                const interval = setInterval(fetchData, 1000);
                 return () => clearInterval(interval);
             }, []);
 
+            useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logs]);
+
+            const pad = (num, len) => String(num || 0).padStart(len, ' ');
+
             return (
-                <div>
-                    <h1>NVIDIA Telemetry Dashboard</h1>
-                    {metrics.length === 0 ? <p>Waiting for C++ Logger batch flush...</p> : (
-                        <div className="card">
-                            <h3>Live Hardware Metrics</h3>
-                            <p><strong>GPU Temp:</strong> {metrics[metrics.length-1].gpu_temp} °C</p>
-                            <p><strong>GPU Util:</strong> {metrics[metrics.length-1].gpu_util} %</p>
-                            <p><strong>CPU Util:</strong> {metrics[metrics.length-1].cpu.toFixed(2)} %</p>
-                            <p><strong>RAM Util:</strong> {metrics[metrics.length-1].ram.toFixed(2)} %</p>
+                <React.Fragment>
+                    <div id="terminal-content">
+                        <pre className="ascii-art">{asciiLogo}</pre>
+                        {sys && (
+                            <div className="sys-info">
+                                <div>HOST CPU : {sys.cpu_name}</div>
+                                <div>HOST GPU : {sys.gpu_name}</div>
+                                <div>SYS RAM  : {sys.total_ram}</div>
+                                <br/>
+                            </div>
+                        )}
+                        {logs.map((log, i) => {
+                            const time = new Date(log.timestamp * 1000).toLocaleTimeString('en-US', { hour12: false });
+                            return (
+                                <div key={i} className="log-entry">
+                                    <span className="timestamp">[{time}]</span> root@nvidia-host:~# 
+                                    <span className="metric-label"> GPU_TEMP:</span> {pad(log.gpu_temp, 3)}°C |
+                                    <span className="metric-label"> GPU_UTIL:</span> {pad(log.gpu_util, 3)}% |
+                                    <span className="metric-label"> VRAM_UTIL:</span> {pad(log.vram_usage, 3)}% |
+                                    <span className="metric-label"> CPU_UTIL:</span> {pad(Number(log.cpu).toFixed(1), 5)}% |
+                                    <span className="metric-label"> RAM_USED:</span> {pad(Number(log.ram).toFixed(1), 5)}%
+                                </div>
+                            );
+                        })}
+                        <div className="log-entry"><span className="blink">_</span></div><div ref={endRef} />
+                    </div>
+                    
+                    <div id="status-bar">
+                        <div className="ascii-art">--- 60-SECOND ROLLING AGGREGATES ---</div>
+                        <div className="log-entry">
+                            <span className="metric-label">MAXES |</span> 
+                            <span className="metric-label"> GPU_TEMP:</span> {pad(stats.max_temp, 3)}°C |
+                            <span className="metric-label"> GPU_UTIL:</span> {pad(stats.max_gutil, 3)}% |
+                            <span className="metric-label"> VRAM_UTIL:</span> {pad(stats.max_vram, 3)}% |
+                            <span className="metric-label"> CPU_UTIL:</span> {pad(Number(stats.max_cpu).toFixed(1), 5)}% |
+                            <span className="metric-label"> RAM_USED:</span> {pad(Number(stats.max_ram).toFixed(1), 5)}%
                         </div>
-                    )}
-                </div>
+                        <div className="log-entry">
+                            <span className="metric-label">AVGS  |</span> 
+                            <span className="metric-label"> GPU_TEMP:</span> {pad(stats.avg_temp, 3)}°C |
+                            <span className="metric-label"> GPU_UTIL:</span> {pad(stats.avg_gutil, 3)}% |
+                            <span className="metric-label"> VRAM_UTIL:</span> {pad(stats.avg_vram, 3)}% |
+                            <span className="metric-label"> CPU_UTIL:</span> {pad(Number(stats.avg_cpu).toFixed(1), 5)}% |
+                            <span className="metric-label"> RAM_USED:</span> {pad(Number(stats.avg_ram).toFixed(1), 5)}%
+                        </div>
+                    </div>
+                </React.Fragment>
             );
         }
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        const root = ReactDOM.createRoot(document.getElementById('root')); root.render(<App />);
     </script>
 </body>
 </html>
